@@ -14,6 +14,7 @@ public class MovieController {
 
     private final MovieService movieService;
 
+    //To Fetch Movies
     @GetMapping
     public List<MovieDto> getMovies(@RequestParam(defaultValue = "false") boolean upcomingOnly) {
         return upcomingOnly ? movieService.getMoviesWithUpcomingShows() : movieService.getAllMovies();
