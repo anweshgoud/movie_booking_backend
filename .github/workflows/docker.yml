@@ -48,3 +48,14 @@ jobs:
              sed -i 's/^BACKEND_IMAGE_TAG=.*/BACKEND_IMAGE_TAG=$IMAGE_TAG/' .env && \
              docker compose pull springboot && \
              docker compose up -d springboot"
+      
+      - name: Verify Backend Health
+        env:
+          VM_HOST: ${{ secrets.VM_HOST }}
+          VM_USER: ${{ secrets.VM_USER }}
+          VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
+        run: |
+          ssh -o StrictHostKeyChecking=no \
+            -i ~/.ssh/movie-booking-github-actions \
+            $VM_USER@$VM_HOST \
+            "curl --fail --silent --show-error http://localhost:8080/actuator/health"
