@@ -46,6 +46,7 @@ jobs:
              docker compose pull springboot && \
              docker compose up -d springboot"
       
+      
       - name: Verify Backend Health
         env:
           VM_HOST: ${{ secrets.VM_HOST }}
@@ -55,4 +56,21 @@ jobs:
           ssh -o StrictHostKeyChecking=no \
             -i ~/.ssh/movie-booking-github-actions \
             $VM_USER@$VM_HOST \
-            "curl --fail --silent --show-error http://localhost:8080/actuator/health"
+            '
+            echo "Waiting for backend to become healthy..."
+
+            for i in {1..12}; do
+              if curl --fail --silent --show-error http://localhost:8080/actuator/health; then
+                echo ""
+                echo "Backend is healthy!"
+                exit 0
+              fi
+
+              echo "Backend not ready yet. Attempt $i/12"
+              sleep 10
+            done
+
+            echo "Backend failed health check."
+            docker logs --tail 100 movie-booking-api
+            exit 1
+            '
