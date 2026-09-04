@@ -1,8 +1,10 @@
 name: Build and Deploy Backend
+
 on:
   push:
     branches:
       - main
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -42,11 +44,13 @@ jobs:
             -i ~/.ssh/movie-booking-github-actions \
             $VM_USER@$VM_HOST \
             "cd ~ && \
+             CURRENT_TAG=\$(grep '^BACKEND_IMAGE_TAG=' .env | cut -d '=' -f2) && \
+             echo \$CURRENT_TAG > /tmp/previous_backend_tag && \
+             echo 'Previous backend tag:' \$CURRENT_TAG && \
              sed -i 's/^BACKEND_IMAGE_TAG=.*/BACKEND_IMAGE_TAG=$IMAGE_TAG/' .env && \
              docker compose pull springboot && \
              docker compose up -d springboot"
-      
-      
+
       - name: Verify Backend Health
         env:
           VM_HOST: ${{ secrets.VM_HOST }}
@@ -71,6 +75,46 @@ jobs:
             done
 
             echo "Backend failed health check."
+            docker logs --tail 100 movie-booking-api
+            exit 1
+            '
+
+      - name: Rollback on failure
+        if: failure()
+        env:
+          VM_HOST: ${{ secrets.VM_HOST }}
+          VM_USER: ${{ secrets.VM_USER }}
+          VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
+        run: |
+          ssh -o StrictHostKeyChecking=no \
+            -i ~/.ssh/movie-booking-github-actions \
+            $VM_USER@$VM_HOST \
+            '
+            echo "Deployment failed. Starting rollback..."
+
+            PREVIOUS_TAG=$(cat /tmp/previous_backend_tag)
+
+            echo "Rolling back to: $PREVIOUS_TAG"
+
+            sed -i "s/^BACKEND_IMAGE_TAG=.*/BACKEND_IMAGE_TAG=$PREVIOUS_TAG/" .env
+
+            docker compose pull springboot
+            docker compose up -d springboot
+
+            echo "Waiting for rollback application..."
+
+            for i in {1..12}; do
+              if curl --fail --silent --show-error http://localhost:8080/actuator/health; then
+                echo ""
+                echo "Rollback successful!"
+                exit 0
+              fi
+
+              echo "Rollback application not ready. Attempt $i/12"
+              sleep 10
+            done
+
+            echo "Rollback failed!"
             docker logs --tail 100 movie-booking-api
             exit 1
             '
