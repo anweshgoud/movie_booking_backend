@@ -9,9 +9,13 @@ pipeline {
         }
 
         stage('Test') {
-            steps {
-                sh 'mvn test'
-            }
-        }
+    steps {
+        sh '''
+            java -version
+            mvn -version
+            mvn test
+        '''
+    }
+}
     }
 }
