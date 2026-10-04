@@ -8,9 +8,9 @@ pipeline {
             }
         }
 
-        stage('Hello') {
+        stage('Test') {
             steps {
-                echo 'Hello from Jenkins!'
+                sh './mvnw test'
             }
         }
     }
