@@ -9,13 +9,19 @@ pipeline {
         }
 
         stage('Test') {
-    steps {
-        sh '''
-            java -version
-            mvn -version
-            mvn test
-        '''
-    }
-}
+            steps {
+                sh '''
+                    java -version
+                    mvn -version
+                    mvn test
+                '''
+            }
+        }
+
+        stage('Docker Build') {
+            steps {
+                sh 'docker build -t anweshanthati/movie_booking_backend:${GIT_COMMIT} .'
+            }
+        }
     }
 }
