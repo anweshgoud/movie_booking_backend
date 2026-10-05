@@ -38,5 +38,21 @@ pipeline {
         }
     }
 }
+        stage('Deploy') {
+    steps {
+        sshagent(['movie-booking-vm-ssh']) {
+            sh '''
+                ssh -o StrictHostKeyChecking=no anwesh_anthati@34.14.157.155 \
+                "sed -i 's/^BACKEND_IMAGE_TAG=.*/BACKEND_IMAGE_TAG=${GIT_COMMIT}/' /home/anwesh_anthati/.env"
+
+                ssh -o StrictHostKeyChecking=no anwesh_anthati@34.14.157.155 \
+                "cd /home/anwesh_anthati && docker compose pull springboot"
+
+                ssh -o StrictHostKeyChecking=no anwesh_anthati@34.14.157.155 \
+                "cd /home/anwesh_anthati && docker compose up -d springboot"
+            '''
+        }
+    }
+}
     }
 }
