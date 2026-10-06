@@ -51,32 +51,67 @@ pipeline {
         }
 
         stage('Deploy') {
-            steps {
-                withCredentials([
-                    sshUserPrivateKey(
-                        credentialsId: 'movie-booking-vm-ssh',
-                        keyFileVariable: 'SSH_KEY',
-                        usernameVariable: 'SSH_USER'
-                    )
-                ]) {
-                    sh '''
-                        ssh -o StrictHostKeyChecking=no \
-                            -i "$SSH_KEY" \
-                            "$SSH_USER@34.14.157.155" \
-                            "sed -i 's/^BACKEND_IMAGE_TAG=.*/BACKEND_IMAGE_TAG=${GIT_COMMIT}/' /home/anwesh_anthati/.env"
+    steps {
+        withCredentials([
+            sshUserPrivateKey(
+                credentialsId: 'movie-booking-vm-ssh',
+                keyFileVariable: 'SSH_KEY',
+                usernameVariable: 'SSH_USER'
+            )
+        ]) {
+            sh '''
+                OLD_TAG=$(ssh -o StrictHostKeyChecking=no \
+                    -i "$SSH_KEY" \
+                    "$SSH_USER@34.14.157.155" \
+                    "grep '^BACKEND_IMAGE_TAG=' /home/anwesh_anthati/.env | cut -d= -f2")
 
-                        ssh -o StrictHostKeyChecking=no \
-                            -i "$SSH_KEY" \
-                            "$SSH_USER@34.14.157.155" \
-                            "cd /home/anwesh_anthati && docker compose pull springboot"
+                echo "Previous image tag: $OLD_TAG"
+                echo "New image tag: $GIT_COMMIT"
 
-                        ssh -o StrictHostKeyChecking=no \
-                            -i "$SSH_KEY" \
-                            "$SSH_USER@34.14.157.155" \
-                            "cd /home/anwesh_anthati && docker compose up -d springboot"
-                    '''
-                }
-            }
+                ssh -o StrictHostKeyChecking=no \
+                    -i "$SSH_KEY" \
+                    "$SSH_USER@34.14.157.155" \
+                    "sed -i 's/^BACKEND_IMAGE_TAG=.*/BACKEND_IMAGE_TAG=${GIT_COMMIT}/' /home/anwesh_anthati/.env"
+
+                ssh -o StrictHostKeyChecking=no \
+                    -i "$SSH_KEY" \
+                    "$SSH_USER@34.14.157.155" \
+                    "cd /home/anwesh_anthati && docker compose pull springboot"
+
+                ssh -o StrictHostKeyChecking=no \
+                    -i "$SSH_KEY" \
+                    "$SSH_USER@34.14.157.155" \
+                    "cd /home/anwesh_anthati && docker compose up -d springboot"
+
+                echo "Running health check..."
+
+                if ssh -o StrictHostKeyChecking=no \
+                    -i "$SSH_KEY" \
+                    "$SSH_USER@34.14.157.155" \
+                    "curl --fail http://localhost:8080/actuator/health"; then
+
+                    echo "Deployment successful!"
+
+                else
+
+                    echo "Health check failed!"
+                    echo "Rolling back to $OLD_TAG"
+
+                    ssh -o StrictHostKeyChecking=no \
+                        -i "$SSH_KEY" \
+                        "$SSH_USER@34.14.157.155" \
+                        "sed -i 's/^BACKEND_IMAGE_TAG=.*/BACKEND_IMAGE_TAG=$OLD_TAG/' /home/anwesh_anthati/.env"
+
+                    ssh -o StrictHostKeyChecking=no \
+                        -i "$SSH_KEY" \
+                        "$SSH_USER@34.14.157.155" \
+                        "cd /home/anwesh_anthati && docker compose pull springboot && docker compose up -d springboot"
+
+                    exit 1
+                fi
+            '''
         }
+    }
+}
     }
 }
