@@ -51,67 +51,103 @@ pipeline {
         }
 
         stage('Deploy') {
-    steps {
-        withCredentials([
-            sshUserPrivateKey(
-                credentialsId: 'movie-booking-vm-ssh',
-                keyFileVariable: 'SSH_KEY',
-                usernameVariable: 'SSH_USER'
-            )
-        ]) {
-            sh '''
-                OLD_TAG=$(ssh -o StrictHostKeyChecking=no \
-                    -i "$SSH_KEY" \
-                    "$SSH_USER@34.14.157.155" \
-                    "grep '^BACKEND_IMAGE_TAG=' /home/anwesh_anthati/.env | cut -d= -f2")
+            steps {
+                withCredentials([
+                    sshUserPrivateKey(
+                        credentialsId: 'movie-booking-vm-ssh',
+                        keyFileVariable: 'SSH_KEY',
+                        usernameVariable: 'SSH_USER'
+                    )
+                ]) {
+                    sh '''
+                        echo "Getting currently deployed image tag..."
 
-                echo "Previous image tag: $OLD_TAG"
-                echo "New image tag: $GIT_COMMIT"
+                        OLD_TAG=$(ssh -o StrictHostKeyChecking=no \
+                            -i "$SSH_KEY" \
+                            "$SSH_USER@34.14.157.155" \
+                            "grep '^BACKEND_IMAGE_TAG=' /home/anwesh_anthati/.env | cut -d= -f2")
 
-                ssh -o StrictHostKeyChecking=no \
-                    -i "$SSH_KEY" \
-                    "$SSH_USER@34.14.157.155" \
-                    "sed -i 's/^BACKEND_IMAGE_TAG=.*/BACKEND_IMAGE_TAG=${GIT_COMMIT}/' /home/anwesh_anthati/.env"
+                        echo "Previous image tag: $OLD_TAG"
+                        echo "New image tag: $GIT_COMMIT"
 
-                ssh -o StrictHostKeyChecking=no \
-                    -i "$SSH_KEY" \
-                    "$SSH_USER@34.14.157.155" \
-                    "cd /home/anwesh_anthati && docker compose pull springboot"
+                        echo "Updating image tag..."
 
-                ssh -o StrictHostKeyChecking=no \
-                    -i "$SSH_KEY" \
-                    "$SSH_USER@34.14.157.155" \
-                    "cd /home/anwesh_anthati && docker compose up -d springboot"
+                        ssh -o StrictHostKeyChecking=no \
+                            -i "$SSH_KEY" \
+                            "$SSH_USER@34.14.157.155" \
+                            "sed -i 's/^BACKEND_IMAGE_TAG=.*/BACKEND_IMAGE_TAG=${GIT_COMMIT}/' /home/anwesh_anthati/.env"
 
-                echo "Running health check..."
+                        echo "Pulling new Docker image..."
 
-                if ssh -o StrictHostKeyChecking=no \
-                    -i "$SSH_KEY" \
-                    "$SSH_USER@34.14.157.155" \
-                    "curl --fail http://localhost:8080/actuator/health"; then
+                        ssh -o StrictHostKeyChecking=no \
+                            -i "$SSH_KEY" \
+                            "$SSH_USER@34.14.157.155" \
+                            "cd /home/anwesh_anthati && docker compose pull springboot"
 
-                    echo "Deployment successful!"
+                        echo "Starting new backend container..."
 
-                else
+                        ssh -o StrictHostKeyChecking=no \
+                            -i "$SSH_KEY" \
+                            "$SSH_USER@34.14.157.155" \
+                            "cd /home/anwesh_anthati && docker compose up -d springboot"
 
-                    echo "Health check failed!"
-                    echo "Rolling back to $OLD_TAG"
+                        echo "Running health check..."
 
-                    ssh -o StrictHostKeyChecking=no \
-                        -i "$SSH_KEY" \
-                        "$SSH_USER@34.14.157.155" \
-                        "sed -i 's/^BACKEND_IMAGE_TAG=.*/BACKEND_IMAGE_TAG=$OLD_TAG/' /home/anwesh_anthati/.env"
+                        HEALTH_CHECK_PASSED=false
 
-                    ssh -o StrictHostKeyChecking=no \
-                        -i "$SSH_KEY" \
-                        "$SSH_USER@34.14.157.155" \
-                        "cd /home/anwesh_anthati && docker compose pull springboot && docker compose up -d springboot"
+                        for i in 1 2 3 4 5
+                        do
+                            echo "Health check attempt $i/5"
 
-                    exit 1
-                fi
-            '''
+                            if ssh -o StrictHostKeyChecking=no \
+                                -i "$SSH_KEY" \
+                                "$SSH_USER@34.14.157.155" \
+                                "curl --fail http://localhost:8080/actuator/health"; then
+
+                                HEALTH_CHECK_PASSED=true
+                                echo "Health check passed!"
+                                break
+                            fi
+
+                            echo "Health check failed. Waiting 5 seconds..."
+                            sleep 5
+                        done
+
+                        if [ "$HEALTH_CHECK_PASSED" = true ]; then
+
+                            echo "Deployment successful!"
+
+                        else
+
+                            echo "Health check failed after 5 attempts!"
+                            echo "Rolling back to $OLD_TAG"
+
+                            ssh -o StrictHostKeyChecking=no \
+                                -i "$SSH_KEY" \
+                                "$SSH_USER@34.14.157.155" \
+                                "sed -i 's/^BACKEND_IMAGE_TAG=.*/BACKEND_IMAGE_TAG=$OLD_TAG/' /home/anwesh_anthati/.env"
+
+                            echo "Pulling previous image..."
+
+                            ssh -o StrictHostKeyChecking=no \
+                                -i "$SSH_KEY" \
+                                "$SSH_USER@34.14.157.155" \
+                                "cd /home/anwesh_anthati && docker compose pull springboot"
+
+                            echo "Starting previous version..."
+
+                            ssh -o StrictHostKeyChecking=no \
+                                -i "$SSH_KEY" \
+                                "$SSH_USER@34.14.157.155" \
+                                "cd /home/anwesh_anthati && docker compose up -d springboot"
+
+                            echo "Rollback completed."
+
+                            exit 1
+                        fi
+                    '''
+                }
+            }
         }
-    }
-}
     }
 }
